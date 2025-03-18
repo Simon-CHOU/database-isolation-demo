@@ -5,17 +5,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 import static org.junit.jupiter.api.Assertions.*;
 import org.springframework.dao.DataAccessException;
 
 
 @SpringBootTest
+@Sql(scripts = "/db/testdata/init.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 public class IsolationLevelTest {
 
     @Autowired
@@ -37,18 +41,24 @@ public class IsolationLevelTest {
         // Session 1: 读取初始余额
         BigDecimal initialBalance = jdbcTemplate.queryForObject("SELECT balance FROM accounts WHERE id = 1", BigDecimal.class);
         assertEquals(new BigDecimal("100.00"), initialBalance);
-
+        System.out.println("--=================");
         // Session 2: 异步更新余额 (使用CompletableFuture模拟并发)
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             jdbcTemplate.update("UPDATE accounts SET balance = balance + 50.00 WHERE id = 1");
             jdbcTemplate.execute("COMMIT"); //手动提交
         });
         TimeUnit.MILLISECONDS.sleep(500);
-
+        System.out.println("---------=================");
         // Session 1: 再次读取余额，应该能看到Session 2提交的更新
         BigDecimal updatedBalance = jdbcTemplate.queryForObject("SELECT balance FROM accounts WHERE id = 1", BigDecimal.class);
-
-        future.get(); // 确保Session 2已完成
+        System.out.println("----1111-----===========###########======");
+        try {
+            future.get(2, TimeUnit.SECONDS);
+            fail("Expected exception not thrown");
+        } catch (TimeoutException e) {
+            fail("Test timed out: " + e.getMessage());
+        }
+        System.out.println("---------===========###########======");
         assertEquals(new BigDecimal("150.00"), updatedBalance);
     }
 
@@ -116,7 +126,8 @@ public class IsolationLevelTest {
 
                 // 第二次查询，在REPEATABLE_READ下会发生幻读，但在SERIALIZABLE下会抛出异常
                 jdbcTemplate.queryForList("SELECT * FROM accounts WHERE balance > 80.00");
-                jdbcTemplate.execute("COMMIT"); //提交事务
+                jdbcTemplate.execute("COMMIT");
+
             });
 
             // Session 2
@@ -133,6 +144,7 @@ public class IsolationLevelTest {
 
                 // 插入新数据，这会导致session1的第二次查询产生幻读(如果在REPEATABLE_READ下)
                 jdbcTemplate.update("INSERT INTO accounts (name, balance) VALUES ('Charlie', 90.00)");
+        jdbcTemplate.execute("COMMIT"); // 确保在session1第二次查询前提交
                 jdbcTemplate.execute("COMMIT"); // 提交事务
             });
 
@@ -144,6 +156,7 @@ public class IsolationLevelTest {
     }
 
     @Test
+    @Transactional
     public void testSerializable_Conflict() {
         //使用JPA
         assertThrows(DataAccessException.class, () -> {
