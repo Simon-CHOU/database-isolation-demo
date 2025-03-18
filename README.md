@@ -39,3 +39,17 @@ docker run -d \
   postgres:15-alpine
 
 ```
+
+
+
+我们知道 spring boot 提供的Isolation类，对应5中隔离级别：DEFAULT
+READ_UNCOMMITTED
+READ_COMMITTED
+REPEATABLE_READ
+SERIALIZABLE。这五种隔离级别有各自的特点，例如会出现 脏读 幻读 不可重复读等。
+请你总结他们的特点，然后在 src/test/java/com/example/demo/isolev 目录下，
+分别创建五种隔离级别对应的5个测试类，并添加测试方法，验证五种隔离级别不同的特点。
+再创建第六个测试类验证 MVCC 的工作方式。 
+要求：这些测试类都应该能执行通过，如果预期是抛异常，则 assert异常。 
+这些测试可以通过 ./mvnw test 执行，互不干扰。 合理的创建sql 用户初始化。
+初始化的sql文件请托管在 src/test/resources/db/testdata 目录下。
