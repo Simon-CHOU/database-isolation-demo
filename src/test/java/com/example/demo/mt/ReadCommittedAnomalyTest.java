@@ -45,6 +45,31 @@ public class ReadCommittedAnomalyTest {
         jdbcTemplate.execute("CREATE TABLE website (id INT PRIMARY KEY, hits INT)");
     }
 
+    private void logLockInfo(String sessionName) {
+        try {
+            String lockQuery = """
+                SELECT locked_row.hits, pl.mode, pl.granted
+                FROM pg_locks pl
+                JOIN pg_database pd ON pl.database = pd.oid
+                JOIN website locked_row ON pl.relation = 'website'::regclass::oid
+                WHERE pd.datname = current_database()
+                AND locked_row.id = 1
+                AND pl.pid = pg_backend_pid();
+            """;
+            
+            jdbcTemplate.query(lockQuery, (rs) -> {
+                System.out.printf("[%s] 行锁状态 - hits值: %d, 锁模式: %s, 是否获得锁: %s%n",
+                    sessionName,
+                    rs.getInt("hits"),
+                    rs.getString("mode"),
+                    rs.getBoolean("granted") ? "是" : "否"
+                );
+            });
+        } catch (Exception e) {
+            System.out.printf("[%s] 查询锁状态时发生错误: %s%n", sessionName, e.getMessage());
+        }
+    }
+
     @Test
     void testReadCommittedAnomaly() throws Exception {
         // 统计DELETE操作生效和不生效的次数
@@ -52,7 +77,7 @@ public class ReadCommittedAnomalyTest {
         AtomicInteger deleteFailCount = new AtomicInteger(0);
         
         // 执行100次测试
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < 100; i++) {
             // 每次测试前重置数据
             jdbcTemplate.update("TRUNCATE TABLE website");
             jdbcTemplate.update("INSERT INTO website VALUES (1, 9), (2, 10)");
@@ -74,6 +99,7 @@ public class ReadCommittedAnomalyTest {
                     try {
                         // 更新所有行的hits值
                         jdbcTemplate.update("UPDATE website SET hits = hits + 1");
+                        logLockInfo("UPDATE事务");
                         
                         // 模拟一些处理时间，增加并发冲突的可能性
                         TimeUnit.MILLISECONDS.sleep(10);
@@ -106,6 +132,7 @@ public class ReadCommittedAnomalyTest {
                     try {
                         // 删除hits=10的行
                         int rowsAffected = jdbcTemplate.update("DELETE FROM website WHERE hits = 10");
+                        logLockInfo("DELETE事务");
                         
                         // 提交事务
                         transactionManager.commit(status);
