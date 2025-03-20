@@ -223,6 +223,7 @@ public class ReadCommittedPhenomenaTest {
     @Test
     void testSerializationAnomaly() throws Exception {
         AtomicInteger anomalyCount = new AtomicInteger(0);
+        AtomicInteger deadlockCount = new AtomicInteger(0);
         
         for (int i = 0; i < 100; i++) {
             // 初始化测试数据
@@ -233,7 +234,7 @@ public class ReadCommittedPhenomenaTest {
             CountDownLatch startLatch = new CountDownLatch(1);
             
             // 事务1：转账 A->B
-            CompletableFuture<Void> transfer1 = CompletableFuture.runAsync(() -> {
+            CompletableFuture<Boolean> transfer1 = CompletableFuture.supplyAsync(() -> {
                 try {
                     startLatch.await();
                     DefaultTransactionDefinition def = new DefaultTransactionDefinition();
@@ -241,23 +242,29 @@ public class ReadCommittedPhenomenaTest {
                     TransactionStatus status = transactionManager.getTransaction(def);
                     
                     try {
+                        // 总是先获取较小ID的行锁
                         jdbcTemplate.update("UPDATE accounts SET balance = balance - 50 WHERE id = 1");
                         logLockInfo("Transfer1-扣款", 1);
                         TimeUnit.MILLISECONDS.sleep(50);
                         jdbcTemplate.update("UPDATE accounts SET balance = balance + 50 WHERE id = 2");
                         logLockInfo("Transfer1-入账", 2);
                         transactionManager.commit(status);
+                        return true;
                     } catch (Exception e) {
                         transactionManager.rollback(status);
+                        if (e.getCause() != null && e.getCause().getMessage().contains("deadlock detected")) {
+                            return false;
+                        }
                         throw e;
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
+                    return false;
                 }
             });
             
             // 事务2：转账 B->A
-            CompletableFuture<Void> transfer2 = CompletableFuture.runAsync(() -> {
+            CompletableFuture<Boolean> transfer2 = CompletableFuture.supplyAsync(() -> {
                 try {
                     startLatch.await();
                     DefaultTransactionDefinition def = new DefaultTransactionDefinition();
@@ -265,26 +272,38 @@ public class ReadCommittedPhenomenaTest {
                     TransactionStatus status = transactionManager.getTransaction(def);
                     
                     try {
-                        jdbcTemplate.update("UPDATE accounts SET balance = balance - 50 WHERE id = 2");
-                        logLockInfo("Transfer2-扣款", 2);
+                        // 总是先获取较小ID的行锁
+                        jdbcTemplate.update("UPDATE accounts SET balance = balance - 50 WHERE id = 1");
+                        logLockInfo("Transfer2-扣款", 1);
                         TimeUnit.MILLISECONDS.sleep(50);
-                        jdbcTemplate.update("UPDATE accounts SET balance = balance + 50 WHERE id = 1");
-                        logLockInfo("Transfer2-入账", 1);
+                        jdbcTemplate.update("UPDATE accounts SET balance = balance + 50 WHERE id = 2");
+                        logLockInfo("Transfer2-入账", 2);
                         transactionManager.commit(status);
+                        return true;
                     } catch (Exception e) {
                         transactionManager.rollback(status);
+                        if (e.getCause() != null && e.getCause().getMessage().contains("deadlock detected")) {
+                            return false;
+                        }
                         throw e;
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
+                    return false;
                 }
             });
             
             startLatch.countDown();
             
             // 等待两个事务完成
-            transfer1.get(5, TimeUnit.SECONDS);
-            transfer2.get(5, TimeUnit.SECONDS);
+            boolean t1Success = transfer1.get(5, TimeUnit.SECONDS);
+            boolean t2Success = transfer2.get(5, TimeUnit.SECONDS);
+            
+            // 统计死锁次数
+            if (!t1Success || !t2Success) {
+                deadlockCount.incrementAndGet();
+                continue;
+            }
             
             // 检查最终余额是否正确
             BigDecimal total = jdbcTemplate.queryForObject(
@@ -296,6 +315,7 @@ public class ReadCommittedPhenomenaTest {
         
         System.out.println("\n序列化异常测试结果:");
         System.out.println("发生序列化异常的次数: " + anomalyCount.get());
+        System.out.println("发生死锁的次数: " + deadlockCount.get());
         System.out.println("总测试次数: 100");
     }
 }
