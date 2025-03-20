@@ -30,9 +30,9 @@ public class ReadCommittedIsolationTest {
         // 创建一个直接连接到数据库的DataSource
         DriverManagerDataSource ds = new DriverManagerDataSource();
         ds.setDriverClassName("org.postgresql.Driver");
-        ds.setUrl("jdbc:postgresql://localhost:5432/testdb"); // 根据你的实际配置修改
-        ds.setUsername("postgres"); // 根据你的实际配置修改
-        ds.setPassword("postgres"); // 根据你的实际配置修改
+        ds.setUrl("jdbc:postgresql://localhost:5432/yourdb"); // 根据你的实际配置修改
+        ds.setUsername("youruser"); // 根据你的实际配置修改
+        ds.setPassword("yourpassword"); // 根据你的实际配置修改
         
         this.dataSource = ds;
         this.jdbcTemplate = new JdbcTemplate(dataSource);
@@ -40,6 +40,7 @@ public class ReadCommittedIsolationTest {
         
         // 初始化测试数据
         jdbcTemplate.execute("DROP TABLE IF EXISTS accounts");
+        System.out.println("down exe");
         jdbcTemplate.execute("CREATE TABLE accounts (id INT PRIMARY KEY, balance DECIMAL(10,2))");
         jdbcTemplate.update("INSERT INTO accounts VALUES (1, 100.00)");
     }

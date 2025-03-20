@@ -68,3 +68,35 @@ SERIALIZABLE。这五种隔离级别有各自的特点，例如会出现 脏读 
 验证时，使用多线程并发执行来模拟真实环境下多个sql session执行的情况。
 为了避免偶然性干扰结论，每个测试应该执行100遍，统计结果。
 测试过程中，请在必要的地方打印关键行的行锁获取状态。
+
+
+
+
+
+请在这个目录下，创建一个单独的测试类，以进程模拟sql session，模拟以下文档中描绘的进程：As an example, consider a table mytab, initially containing:
+
+class | value
+
+-------+-------
+
+1 |    10
+
+1 |    20
+
+2 |   100
+
+2 |   200
+
+Suppose that serializable transaction A computes:
+
+SELECT SUM(value) FROM mytab WHERE class = 1;
+
+and then inserts the result (30) as the value in a new row with class = 2. Concurrently, serializable transaction B computes:
+
+SELECT SUM(value) FROM mytab WHERE class = 2;
+
+and obtains the result 300, which it inserts in a new row with class = 1. Then both transactions try to commit. If either transaction were running at the Repeatable Read isolation level, both would be allowed to commit; but since there is no serial order of execution consistent with the result, using Serializable transactions will allow one transaction to commit and will roll the other back with this message:
+
+ERROR:  could not serialize access due to read/write dependencies among transactions
+
+This is because if A had executed before B, B would have computed the sum 330, not 300, and similarly the other order would have resulted in a different sum computed by A.
