@@ -100,3 +100,8 @@ and obtains the result 300, which it inserts in a new row with class = 1. Then b
 ERROR:  could not serialize access due to read/write dependencies among transactions
 
 This is because if A had executed before B, B would have computed the sum 330, not 300, and similarly the other order would have resulted in a different sum computed by A.
+
+
+
+
+请给我一个最简单的例子，让我能通过 javap 观察到 volatile 禁止指令排序的效果

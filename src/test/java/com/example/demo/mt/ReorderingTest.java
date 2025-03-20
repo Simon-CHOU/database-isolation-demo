@@ -2,6 +2,10 @@ package com.example.demo.mt;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * 指令重排序演示测试类
  * 演示多线程环境下由于指令重排序和内存可见性问题导致的意外执行结果
@@ -48,7 +52,7 @@ public class ReorderingTest {
     /**
      * 读操作方法，可能看到不一致的中间状态：
      * 当flag为true时，理论上应该看到a=1且b=2
-     * 但由于可见性和重排序问题，可能观察到：
+     * 由于可见性和重排序问题，可能观察到：
      * 1. a=0（写操作未可见）
      * 2. b=0（写操作未可见）
      * 3. 或者flag为true时a/b的写入尚未完成
@@ -68,19 +72,55 @@ public class ReorderingTest {
      */
     @Test
     public void testReordering() throws InterruptedException {
+        AtomicInteger count = new AtomicInteger(0);
+        AtomicInteger testNumber = new AtomicInteger(0);  // 添加测试序号计数器
+        
         for (int i = 0; i < 10000; i++) {
             ReorderingTest test = new ReorderingTest();
+            final int currentTest = testNumber.incrementAndGet();  // 获取当前测试序号
             
-            // 创建并启动写线程和读线程
-            Thread writerThread = new Thread(() -> test.writer());
-            Thread readerThread = new Thread(() -> test.reader());
+            // 使用CountDownLatch确保两个线程同时开始
+            CountDownLatch startLatch = new CountDownLatch(1);
+            // 使用CyclicBarrier确保reader线程在writer线程执行过程中运行
+            CyclicBarrier barrier = new CyclicBarrier(2);
             
-            writerThread.start();
+            Thread writerThread = new Thread(() -> {
+                try {
+                    startLatch.await(); // 等待开始信号
+                    a = 1;
+                    barrier.await(); // 让reader有机会在这里执行
+                    b = 2;
+                    flag = true;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            
+            Thread readerThread = new Thread(() -> {
+                try {
+                    startLatch.await();
+                    barrier.await();
+                    if (flag) {
+                        count.incrementAndGet();
+                        System.out.printf("第%d次测试: a = %d, b = %d%n", 
+                            currentTest, a, b);  // 使用局部final变量
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            
             readerThread.start();
+            writerThread.start();
             
-            // 等待两个线程执行完成
+            // 发出开始信号
+            startLatch.countDown();
+            
+            // 等待线程结束
             writerThread.join();
             readerThread.join();
         }
+        
+        System.out.println("总共观察到 flag=true 的次数: " + count.get());
     }
 }
