@@ -53,3 +53,18 @@ SERIALIZABLE。这五种隔离级别有各自的特点，例如会出现 脏读 
 要求：这些测试类都应该能执行通过，如果预期是抛异常，则 assert异常。 
 这些测试可以通过 ./mvnw test 执行，互不干扰。 合理的创建sql 用户初始化。
 初始化的sql文件请托管在 src/test/resources/db/testdata 目录下。
+
+
+
+
+参考上述 website 表的例子，请在 src/test/java/com/example/demo/mt #Folder:中创建一个单元测试，
+在Read committed模式下，连接postgre库，并使用两个线程，模拟两个sql session，执行update 和delete 语句。重复执行测试100次，统计delete语句生效和不生效的次数。
+
+
+在 com/example/demo/mt下创建一个单独的单元测试类，创建四个测试方法，证明Read Committed 隔离级别下：
+- 不再发生Nonrepeatable Read的现象
+- 不再发生 Phantom Read 的现象
+- 会发生 Serialization Anomaly 的现象
+验证时，使用多线程并发执行来模拟真实环境下多个sql session执行的情况。
+为了避免偶然性干扰结论，每个测试应该执行100遍，统计结果。
+测试过程中，请在必要的地方打印关键行的行锁获取状态。
